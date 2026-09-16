@@ -51,46 +51,74 @@ next_id() {
   echo $((max + 1))
 }
 
+# A task's checkbox line ("- [ ] #N ..." / "- [x] #N ...") is its title.
+# Everything after that line, up to the next checkbox line (or EOF), is that
+# task's body and travels with it as a single unit — verbatim, whatever
+# markdown it contains (lists, fences, headings, blank lines, ...).
+#
+# Splits $FILE into `header_lines` (any lines before the first task) and
+# `task_blocks` (one array element per task, title + body joined by real
+# newlines). Callers further down operate on `task_blocks` and then call
+# write_blocks to persist the result.
+split_into_blocks() {
+  header_lines=()
+  task_blocks=()
+  local in_task=0 current="" line all_lines
+  mapfile -t all_lines < "$FILE"
+  for line in "${all_lines[@]}"; do
+    if [[ "$line" =~ ^-\ \[[\ x]\]\ #[0-9]+ ]]; then
+      if [ "$in_task" -eq 1 ]; then task_blocks+=("$current"); fi
+      current="$line"
+      in_task=1
+    elif [ "$in_task" -eq 1 ]; then
+      current+=$'\n'"$line"
+    else
+      header_lines+=("$line")
+    fi
+  done
+  if [ "$in_task" -eq 1 ]; then task_blocks+=("$current"); fi
+}
+
+write_blocks() {
+  local tmp
+  tmp=$(mktemp)
+  [ "${#header_lines[@]}" -gt 0 ] && printf '%s\n' "${header_lines[@]}" >> "$tmp"
+  local b
+  for b in "${task_blocks[@]}"; do
+    printf '%s\n' "$b" >> "$tmp"
+  done
+  mv "$tmp" "$FILE"
+}
+
 # List order is priority order: the top task (position 1) is the highest
-# priority. Moves an existing task to a 1-based position among all tasks.
+# priority. Moves an existing task (title + body, as one unit) to a 1-based
+# position among all tasks.
 move_task() {
   local id="$1" pos="$2" msg="$3"
-  # id is spliced into a grep/awk regex below, so it must be numeric —
+  # id is spliced into a grep/regex below, so it must be numeric —
   # callers validate this too, but re-check here since this regex is
   # what actually decides which task gets moved.
   require_numeric_id "$id"
   grep -qE "^- \[[ x]\] #${id}([^0-9]|\$)" "$FILE" || { echo "No task #$id." >&2; exit 1; }
 
-  local header=() tasks=() line idx=-1 i all_lines
-  mapfile -t all_lines < "$FILE"
-  for line in "${all_lines[@]}"; do
-    if [[ "$line" =~ ^-\ \[[\ x]\]\ #[0-9]+ ]]; then
-      tasks+=("$line")
-    else
-      header+=("$line")
-    fi
-  done
-
-  for i in "${!tasks[@]}"; do
-    if [[ "${tasks[$i]}" =~ ^-\ \[[\ x]\]\ #${id}([^0-9]|$) ]]; then
+  split_into_blocks
+  local idx=-1 i
+  for i in "${!task_blocks[@]}"; do
+    if [[ "${task_blocks[$i]}" =~ ^-\ \[[\ x]\]\ #${id}([^0-9]|$) ]]; then
       idx=$i
       break
     fi
   done
 
-  local task="${tasks[$idx]}"
-  local rest=("${tasks[@]:0:$idx}" "${tasks[@]:$((idx + 1))}")
+  local task="${task_blocks[$idx]}"
+  local rest=("${task_blocks[@]:0:$idx}" "${task_blocks[@]:$((idx + 1))}")
   local count=${#rest[@]}
   local total=$((count + 1))
   [ "$pos" -ge 1 ] || pos=1
   [ "$pos" -le "$total" ] || pos=$total
 
-  local new_tasks=("${rest[@]:0:$((pos - 1))}" "$task" "${rest[@]:$((pos - 1))}")
-
-  tmp=$(mktemp)
-  [ "${#header[@]}" -gt 0 ] && printf '%s\n' "${header[@]}" >> "$tmp"
-  [ "${#new_tasks[@]}" -gt 0 ] && printf '%s\n' "${new_tasks[@]}" >> "$tmp"
-  mv "$tmp" "$FILE"
+  task_blocks=("${rest[@]:0:$((pos - 1))}" "$task" "${rest[@]:$((pos - 1))}")
+  write_blocks
   commit_change "$msg"
   echo "Moved #$id to position $pos."
 }
@@ -121,11 +149,11 @@ case "$cmd" in
     ;;
 
   list)
-    task_lines=$(grep -E '^- \[[ x]\] #[0-9]+' "$FILE" || true)
-    if [ -z "$task_lines" ]; then
+    split_into_blocks
+    if [ "${#task_blocks[@]}" -eq 0 ]; then
       echo "Todo list is empty."
     else
-      echo "$task_lines"
+      printf '%s\n' "${task_blocks[@]}"
     fi
     ;;
 
@@ -162,8 +190,14 @@ case "$cmd" in
     [ -n "$id" ] || { echo "Which task id?" >&2; exit 1; }
     require_numeric_id "$id"
     grep -qE "^- \[[ x]\] #${id}([^0-9]|\$)" "$FILE" || { echo "No task #$id." >&2; exit 1; }
-    tmp=$(mktemp)
-    awk -v id="$id" '!($0 ~ ("^- \\[[ x]\\] #" id "([^0-9]|$)"))' "$FILE" > "$tmp" && mv "$tmp" "$FILE"
+    split_into_blocks
+    kept=()
+    for b in "${task_blocks[@]}"; do
+      [[ "$b" =~ ^-\ \[[\ x]\]\ #${id}([^0-9]|$) ]] && continue
+      kept+=("$b")
+    done
+    task_blocks=("${kept[@]}")
+    write_blocks
     commit_change "Remove #$id"
     echo "Removed #$id."
     ;;
@@ -191,15 +225,22 @@ case "$cmd" in
     ;;
 
   clear-done)
-    tmp=$(mktemp)
-    awk '!/^- \[x\]/' "$FILE" > "$tmp" && mv "$tmp" "$FILE"
+    split_into_blocks
+    kept=()
+    for b in "${task_blocks[@]}"; do
+      [[ "$b" =~ ^-\ \[x\] ]] && continue
+      kept+=("$b")
+    done
+    task_blocks=("${kept[@]}")
+    write_blocks
     commit_change "Clear completed tasks"
     echo "Cleared completed tasks."
     ;;
 
   clear-all)
-    tmp=$(mktemp)
-    awk '!/^- \[[ x]\]/' "$FILE" > "$tmp" && mv "$tmp" "$FILE"
+    split_into_blocks
+    task_blocks=()
+    write_blocks
     commit_change "Clear all tasks"
     echo "Cleared all tasks."
     ;;
