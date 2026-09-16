@@ -13,11 +13,12 @@ and can be inspected with `git -C ~/.todo log` or `git -C ~/.todo log -p`.
 Do not read or edit `TODO.md` directly — always go through the bundled
 script so ids, formatting, and commits stay consistent:
 
-```
+```text
 ${CLAUDE_PLUGIN_ROOT}/scripts/todo.sh <subcommand> [args]
 ```
 
 Subcommands:
+
 - `add <text>` — add a new task, e.g. `add Fix the login bug`
 - `list` — show all tasks with their ids and status
 - `done <id>` — mark a task complete

@@ -43,10 +43,11 @@ commit_change() {
 }
 
 next_id() {
-  local max=0 n
-  while read -r n; do
+  local max=0 n ids
+  mapfile -t ids < <(grep -oE '^- \[[ x]\] #[0-9]+' "$FILE" 2>/dev/null | grep -oE '[0-9]+')
+  for n in "${ids[@]}"; do
     [ -n "$n" ] && [ "$n" -gt "$max" ] && max="$n"
-  done < <(grep -oE '^- \[[ x]\] #[0-9]+' "$FILE" 2>/dev/null | grep -oE '[0-9]+')
+  done
   echo $((max + 1))
 }
 
@@ -60,14 +61,15 @@ move_task() {
   require_numeric_id "$id"
   grep -qE "^- \[[ x]\] #${id}([^0-9]|\$)" "$FILE" || { echo "No task #$id." >&2; exit 1; }
 
-  local header=() tasks=() line idx=-1 i
-  while IFS= read -r line || [ -n "$line" ]; do
+  local header=() tasks=() line idx=-1 i all_lines
+  mapfile -t all_lines < "$FILE"
+  for line in "${all_lines[@]}"; do
     if [[ "$line" =~ ^-\ \[[\ x]\]\ #[0-9]+ ]]; then
       tasks+=("$line")
     else
       header+=("$line")
     fi
-  done < "$FILE"
+  done
 
   for i in "${!tasks[@]}"; do
     if [[ "${tasks[$i]}" =~ ^-\ \[[\ x]\]\ #${id}([^0-9]|$) ]]; then
@@ -86,10 +88,8 @@ move_task() {
   local new_tasks=("${rest[@]:0:$((pos - 1))}" "$task" "${rest[@]:$((pos - 1))}")
 
   tmp=$(mktemp)
-  {
-    [ "${#header[@]}" -gt 0 ] && printf '%s\n' "${header[@]}"
-    [ "${#new_tasks[@]}" -gt 0 ] && printf '%s\n' "${new_tasks[@]}"
-  } > "$tmp"
+  [ "${#header[@]}" -gt 0 ] && printf '%s\n' "${header[@]}" >> "$tmp"
+  [ "${#new_tasks[@]}" -gt 0 ] && printf '%s\n' "${new_tasks[@]}" >> "$tmp"
   mv "$tmp" "$FILE"
   commit_change "$msg"
   echo "Moved #$id to position $pos."
@@ -121,11 +121,11 @@ case "$cmd" in
     ;;
 
   list)
-    tasks=$(grep -E '^- \[[ x]\] #[0-9]+' "$FILE" || true)
-    if [ -z "$tasks" ]; then
+    task_lines=$(grep -E '^- \[[ x]\] #[0-9]+' "$FILE" || true)
+    if [ -z "$task_lines" ]; then
       echo "Todo list is empty."
     else
-      echo "$tasks"
+      echo "$task_lines"
     fi
     ;;
 
