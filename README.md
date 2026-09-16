@@ -28,18 +28,15 @@ when. You can also invoke it explicitly as a slash command, e.g.
 
 ## Install
 
-**From this local checkout** (while developing / for yourself):
-
 ```text
-/plugin marketplace add /Users/matt-nix/Projects/claude-todo-plugin
+/plugin marketplace add mattjmorrison/claude-todo-plugin
 /plugin install todo@todo-marketplace
 ```
 
-**Once pushed to a git repo**, anyone can install it the same way by
-pointing at the repo instead of a local path:
+**From a local checkout** (while developing):
 
 ```text
-/plugin marketplace add <your-org>/claude-todo-plugin
+/plugin marketplace add /path/to/claude-todo-plugin
 /plugin install todo@todo-marketplace
 ```
 
