@@ -361,7 +361,7 @@ commit_count() {
     real=$(command -v "$c")
     ln -s "$real" "$fakebin/$c"
   done
-  run env -i HOME="$HOME" PATH="$fakebin" "$SCRIPT" list
+  PATH="$fakebin" run "$SCRIPT" list
   [ "$status" -eq 1 ]
   [[ "$output" == *"requires git"* ]]
   [ ! -d "$STORE" ]

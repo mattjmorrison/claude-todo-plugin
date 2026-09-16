@@ -1,0 +1,61 @@
+name: Run bats with coverage
+description: Runs a bats test file under kcov and enforces a minimum line coverage threshold.
+inputs:
+  test-file:
+    description: Path to the bats test file to run
+    required: true
+  include-path:
+    description: Path to restrict coverage measurement to
+    required: false
+    default: ./scripts
+  min-coverage:
+    description: Minimum required line coverage percentage
+    required: false
+    default: "100"
+  out-dir:
+    description: Directory kcov should write its report to
+    required: false
+    default: coverage-out
+runs:
+  using: composite
+  steps:
+    - name: Run bats under kcov
+      shell: bash
+      run: kcov --include-path="${{ inputs.include-path }}" "${{ inputs.out-dir }}" bats "${{ inputs.test-file }}"
+
+    - name: Enforce line coverage
+      shell: bash
+      run: |
+        out_dir="${{ inputs.out-dir }}"
+        min="${{ inputs.min-coverage }}"
+
+        find "$out_dir" -maxdepth 4
+        report=$(find "$out_dir" -name coverage.json -path '*kcov-merged*' | head -n1)
+        if [ -z "$report" ]; then
+          report=$(find "$out_dir" -name coverage.json | head -n1)
+        fi
+        if [ -z "$report" ]; then
+          echo "No coverage.json found under $out_dir/ (see tree above)." >&2
+          exit 1
+        fi
+
+        echo "Using report: $report"
+        pct=$(jq -r '.percent_covered' "$report")
+        echo "Line coverage: ${pct}% (required: ${min}%)"
+
+        if ! awk -v p="$pct" -v min="$min" 'BEGIN { exit !(p >= min) }'; then
+          cobertura="$(dirname "$report")/cobertura.xml"
+          if [ -f "$cobertura" ]; then
+            echo ""
+            echo "Uncovered lines:"
+            perl -ne '
+              $file = $1 if /filename="([^"]*)"/;
+              print "$file:$1\n" if /<line number="(\d+)" hits="0"/;
+            ' "$cobertura" |
+            while IFS=: read -r file line; do
+              content=$(sed -n "${line}p" "$file" 2>/dev/null)
+              printf '  %s:%s: %s\n' "$file" "$line" "$content"
+            done
+          fi
+          exit 1
+        fi
