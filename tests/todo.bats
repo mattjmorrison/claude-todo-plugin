@@ -367,6 +367,32 @@ commit_count() {
   [ ! -d "$STORE" ]
 }
 
+# --- markdown body per task -------------------------------------------------
+# A task's checkbox line ("- [ ] #N ...") is its title. Everything after
+# that line, up to the next checkbox line (or EOF), is that task's body and
+# may itself be arbitrary markdown (bulleted lists, headings, code, etc).
+
+@test "list includes a task's markdown body along with its title" {
+  "$SCRIPT" add "homelab checklist" >/dev/null
+  cat >> "$FILE" <<'EOF'
+  - [ ] rack the new switch
+  - [ ] update DNS records
+
+  ```
+  vlan 10 tag uplink
+  ```
+EOF
+  "$SCRIPT" add "second task" >/dev/null
+
+  run "$SCRIPT" list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"- [ ] #1 homelab checklist"* ]]
+  [[ "$output" == *"- [ ] rack the new switch"* ]]
+  [[ "$output" == *"- [ ] update DNS records"* ]]
+  [[ "$output" == *"vlan 10 tag uplink"* ]]
+  [[ "$output" == *"- [ ] #2 second task"* ]]
+}
+
 @test "history survives across a full lifecycle" {
   "$SCRIPT" add "ship the plugin" >/dev/null
   "$SCRIPT" done 1 >/dev/null
