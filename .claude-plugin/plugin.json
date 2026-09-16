@@ -1,0 +1,11 @@
+{
+  "name": "todo",
+  "displayName": "Todo",
+  "description": "Manage a persistent, global, version-controlled todo list through natural language or /todo commands",
+  "version": "0.1.0",
+  "author": {
+    "name": "Matt Morrison"
+  },
+  "keywords": ["todo", "task", "productivity"],
+  "skills": ["./skills/todo"]
+}

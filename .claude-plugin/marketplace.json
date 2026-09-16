@@ -1,0 +1,13 @@
+{
+  "name": "todo-marketplace",
+  "owner": {
+    "name": "Matt Morrison"
+  },
+  "plugins": [
+    {
+      "name": "todo",
+      "source": "./",
+      "description": "Manage a persistent, global, version-controlled todo list through natural language or /todo commands"
+    }
+  ]
+}
