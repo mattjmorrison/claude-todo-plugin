@@ -127,8 +127,50 @@ require_numeric_id() {
   [[ "$1" =~ ^[0-9]+$ ]] || { echo "No task #$1." >&2; exit 1; }
 }
 
+require_task_exists() {
+  local id="$1"
+  grep -qE "^- \[[ x]\] #${id}([^0-9]|\$)" "$FILE" || { echo "No task #$id." >&2; exit 1; }
+}
+
+# Sets FOUND_IDX to the task_blocks index of $1, or -1. Callers must have
+# already populated task_blocks via split_into_blocks.
+find_idx() {
+  local id="$1" i
+  FOUND_IDX=-1
+  for i in "${!task_blocks[@]}"; do
+    if [[ "${task_blocks[$i]}" =~ ^-\ \[[\ x]\]\ #${id}([^0-9]|$) ]]; then
+      FOUND_IDX=$i
+      return
+    fi
+  done
+}
+
+# Position (1-based, among all tasks once $1 itself is set aside) that
+# places $1 immediately before/after $2 in list order.
+position_relative_to() {
+  local id="$1" target="$2" mode="$3"
+  split_into_blocks
+  local rest=() i
+  for i in "${!task_blocks[@]}"; do
+    [[ "${task_blocks[$i]}" =~ ^-\ \[[\ x]\]\ #${id}([^0-9]|$) ]] && continue
+    rest+=("${task_blocks[$i]}")
+  done
+  local k=-1
+  for i in "${!rest[@]}"; do
+    if [[ "${rest[$i]}" =~ ^-\ \[[\ x]\]\ #${target}([^0-9]|$) ]]; then
+      k=$i
+      break
+    fi
+  done
+  if [ "$mode" = "before" ]; then
+    echo $((k + 1))
+  else
+    echo $((k + 2))
+  fi
+}
+
 usage() {
-  echo "Usage: todo.sh {add <text>|list|done <id>|undone <id>|rm <id>|move <id> <position>|top <id>|bottom <id>|clear-done|clear-all}" >&2
+  echo "Usage: todo.sh {add <text>|list|edit <id> <text>|set-body <id> [text]|append-body <id> <text>|done <id>|undone <id>|rm <id>|move <id> <position>|top <id>|bottom <id>|before <id> <target-id>|after <id> <target-id>|clear-done|clear-all}" >&2
   exit 1
 }
 
@@ -155,6 +197,75 @@ case "$cmd" in
     else
       printf '%s\n' "${task_blocks[@]}"
     fi
+    ;;
+
+  edit)
+    id="${1:-}"; shift || true
+    text="$*"
+    [ -n "$id" ] || { echo "Which task id?" >&2; exit 1; }
+    require_numeric_id "$id"
+    [ -n "$text" ] || { echo "New title text?" >&2; exit 1; }
+    require_task_exists "$id"
+    split_into_blocks
+    find_idx "$id"
+    task="${task_blocks[FOUND_IDX]}"
+    first="${task%%$'\n'*}"
+    body_rest=""
+    [[ "$task" == *$'\n'* ]] && body_rest="${task#*$'\n'}"
+    checkbox=$(printf '%s' "$first" | grep -oE '^- \[[ x]\]')
+    if [ -n "$body_rest" ]; then
+      task_blocks[FOUND_IDX]="$checkbox #$id $text"$'\n'"$body_rest"
+    else
+      task_blocks[FOUND_IDX]="$checkbox #$id $text"
+    fi
+    write_blocks
+    commit_change "Edit #$id title"
+    echo "Updated #$id: $text"
+    ;;
+
+  set-body)
+    id="${1:-}"; shift || true
+    text="$*"
+    [ -n "$id" ] || { echo "Which task id?" >&2; exit 1; }
+    require_numeric_id "$id"
+    require_task_exists "$id"
+    split_into_blocks
+    find_idx "$id"
+    task="${task_blocks[FOUND_IDX]}"
+    first="${task%%$'\n'*}"
+    if [ -n "$text" ]; then
+      task_blocks[FOUND_IDX]="$first"$'\n'"$text"
+      msg_verb="Updated"
+    else
+      task_blocks[FOUND_IDX]="$first"
+      msg_verb="Cleared"
+    fi
+    write_blocks
+    commit_change "Set #$id body"
+    echo "$msg_verb #$id's description."
+    ;;
+
+  append-body)
+    id="${1:-}"; shift || true
+    text="$*"
+    [ -n "$id" ] || { echo "Which task id?" >&2; exit 1; }
+    require_numeric_id "$id"
+    [ -n "$text" ] || { echo "Text to append?" >&2; exit 1; }
+    require_task_exists "$id"
+    split_into_blocks
+    find_idx "$id"
+    task="${task_blocks[FOUND_IDX]}"
+    first="${task%%$'\n'*}"
+    body_rest=""
+    [[ "$task" == *$'\n'* ]] && body_rest="${task#*$'\n'}"
+    if [ -n "$body_rest" ]; then
+      task_blocks[FOUND_IDX]="$first"$'\n'"$body_rest"$'\n'"$text"
+    else
+      task_blocks[FOUND_IDX]="$first"$'\n'"$text"
+    fi
+    write_blocks
+    commit_change "Append to #$id's body"
+    echo "Appended to #$id's description."
     ;;
 
   done)
@@ -222,6 +333,32 @@ case "$cmd" in
     [ -n "$id" ] || { echo "Which task id?" >&2; exit 1; }
     require_numeric_id "$id"
     move_task "$id" 999999999 "Move #$id to bottom"
+    ;;
+
+  before)
+    id="${1:-}"; target="${2:-}"
+    [ -n "$id" ] || { echo "Which task id?" >&2; exit 1; }
+    require_numeric_id "$id"
+    [ -n "$target" ] || { echo "Move #$id before which task?" >&2; exit 1; }
+    require_numeric_id "$target"
+    [ "$id" != "$target" ] || { echo "Can't move a task relative to itself." >&2; exit 1; }
+    require_task_exists "$id"
+    require_task_exists "$target"
+    pos=$(position_relative_to "$id" "$target" before)
+    move_task "$id" "$pos" "Move #$id before #$target"
+    ;;
+
+  after)
+    id="${1:-}"; target="${2:-}"
+    [ -n "$id" ] || { echo "Which task id?" >&2; exit 1; }
+    require_numeric_id "$id"
+    [ -n "$target" ] || { echo "Move #$id after which task?" >&2; exit 1; }
+    require_numeric_id "$target"
+    [ "$id" != "$target" ] || { echo "Can't move a task relative to itself." >&2; exit 1; }
+    require_task_exists "$id"
+    require_task_exists "$target"
+    pos=$(position_relative_to "$id" "$target" after)
+    move_task "$id" "$pos" "Move #$id after #$target"
     ;;
 
   clear-done)
