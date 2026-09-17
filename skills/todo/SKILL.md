@@ -20,7 +20,12 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/todo.sh <subcommand> [args]
 Subcommands:
 
 - `add <text>` — add a new task, e.g. `add Fix the login bug`
-- `list` — show all tasks with their ids and status
+- `list` — show all tasks with their ids, status, and body
+- `edit <id> <text>` — rename a task's title (its body is untouched)
+- `set-body <id> [text]` — replace a task's markdown body; omit `text` to
+  clear it
+- `append-body <id> <text>` — add more markdown to a task's existing body
+  without replacing what's there
 - `done <id>` — mark a task complete
 - `undone <id>` — mark a task incomplete again
 - `rm <id>` — delete a task
@@ -28,6 +33,8 @@ Subcommands:
   (position 1 = top = highest priority; list order *is* priority order)
 - `top <id>` — shortcut for `move <id> 1`
 - `bottom <id>` — move a task to the end (lowest priority)
+- `before <id> <target-id>` — move a task to sit immediately above another
+- `after <id> <target-id>` — move a task to sit immediately below another
 - `clear-done` — remove all completed tasks
 - `clear-all` — wipe the whole list
 
@@ -41,9 +48,16 @@ they will rarely type exact command syntax. Examples:
 - "mark #2 done" / "I finished the login fix" (referring to a listed task)
   → run `list` first if you don't already know the id, then `done <id>`
 - "remove the third one" / "delete that task" → `rm <id>`
+- "rename #2 to 'call the plumber'" / "change #2's title" → `edit 2 call the plumber`
+- "add a description to #3 about the API endpoints" / "attach these notes to #3"
+  → `set-body 3 <text>`
+- "add this to #3's description too" / "append to that task's notes"
+  → `append-body 3 <text>`
 - "make #4 top priority" / "move fixing the bug to the top" → `top <id>`
 - "deprioritize #2" / "move that to the bottom" → `bottom <id>`
 - "move #3 to the second spot" → `move 3 2`
+- "move #3 right above #1" / "put #3 before #1" → `before 3 1`
+- "move #2 right after #3" / "put #2 below #3" → `after 2 3`
 - "clear completed tasks" → `clear-done`
 - "clear the whole list" / "start over" → confirm with the user first
   (destructive), then `clear-all`

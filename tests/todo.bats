@@ -343,6 +343,54 @@ commit_count() {
   [[ "${lines[2]}" == "- [ ] #3 three" ]]
 }
 
+@test "before moves a task immediately before another" {
+  "$SCRIPT" add "one" >/dev/null
+  "$SCRIPT" add "two" >/dev/null
+  "$SCRIPT" add "three" >/dev/null
+  run "$SCRIPT" before 3 1
+  [ "$status" -eq 0 ]
+  [[ "$output" == "Moved #3 to position 1." ]]
+  run "$SCRIPT" list
+  [[ "${lines[0]}" == "- [ ] #3 three" ]]
+  [[ "${lines[1]}" == "- [ ] #1 one" ]]
+  [[ "${lines[2]}" == "- [ ] #2 two" ]]
+  git -C "$STORE" log -1 --format=%s | grep -qF "Move #3 before #1"
+}
+
+@test "after moves a task immediately after another" {
+  "$SCRIPT" add "one" >/dev/null
+  "$SCRIPT" add "two" >/dev/null
+  "$SCRIPT" add "three" >/dev/null
+  run "$SCRIPT" after 1 2
+  [ "$status" -eq 0 ]
+  [[ "$output" == "Moved #1 to position 2." ]]
+  run "$SCRIPT" list
+  [[ "${lines[0]}" == "- [ ] #2 two" ]]
+  [[ "${lines[1]}" == "- [ ] #1 one" ]]
+  [[ "${lines[2]}" == "- [ ] #3 three" ]]
+  git -C "$STORE" log -1 --format=%s | grep -qF "Move #1 after #2"
+}
+
+@test "before/after reject moving a task relative to itself" {
+  "$SCRIPT" add "one" >/dev/null
+  run "$SCRIPT" before 1 1
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"relative to itself"* ]]
+  run "$SCRIPT" after 1 1
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"relative to itself"* ]]
+}
+
+@test "before/after fail on a nonexistent id or target" {
+  "$SCRIPT" add "one" >/dev/null
+  run "$SCRIPT" before 1 99
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"No task #99"* ]]
+  run "$SCRIPT" after 99 1
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"No task #99"* ]]
+}
+
 @test "top/bottom without an id fail" {
   run "$SCRIPT" top
   [ "$status" -ne 0 ]
@@ -365,6 +413,88 @@ commit_count() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"requires git"* ]]
   [ ! -d "$STORE" ]
+}
+
+# --- edit / set-body / append-body -----------------------------------------
+
+@test "edit changes a task's title and preserves its status and body" {
+  "$SCRIPT" add "one" >/dev/null
+  "$SCRIPT" done 1 >/dev/null
+  cat >> "$FILE" <<'EOF'
+  - a sub-item
+EOF
+  run "$SCRIPT" edit 1 "one but renamed"
+  [ "$status" -eq 0 ]
+  [[ "$output" == "Updated #1: one but renamed" ]]
+  grep -qF -- "- [x] #1 one but renamed" "$FILE"
+  grep -qF -- "a sub-item" "$FILE"
+  git -C "$STORE" log -1 --format=%s | grep -qF "Edit #1 title"
+}
+
+@test "edit without new text fails" {
+  "$SCRIPT" add "one" >/dev/null
+  run "$SCRIPT" edit 1
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"New title text?"* ]]
+}
+
+@test "edit on a nonexistent id fails" {
+  "$SCRIPT" add "one" >/dev/null
+  run "$SCRIPT" edit 99 "new text"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"No task #99"* ]]
+}
+
+@test "set-body attaches a markdown body to a task" {
+  "$SCRIPT" add "one" >/dev/null
+  run "$SCRIPT" set-body 1 "- sub item a
+- sub item b"
+  [ "$status" -eq 0 ]
+  [[ "$output" == "Updated #1's description." ]]
+  run "$SCRIPT" list
+  [[ "${lines[0]}" == "- [ ] #1 one" ]]
+  [[ "${lines[1]}" == "- sub item a" ]]
+  [[ "${lines[2]}" == "- sub item b" ]]
+  git -C "$STORE" log -1 --format=%s | grep -qF "Set #1 body"
+}
+
+@test "set-body with no text clears an existing body" {
+  "$SCRIPT" add "one" >/dev/null
+  "$SCRIPT" set-body 1 "some body text" >/dev/null
+  run "$SCRIPT" set-body 1
+  [ "$status" -eq 0 ]
+  [[ "$output" == "Cleared #1's description." ]]
+  run "$SCRIPT" list
+  [ "${#lines[@]}" -eq 1 ]
+  [[ "${lines[0]}" == "- [ ] #1 one" ]]
+}
+
+@test "append-body adds to an existing body without replacing it" {
+  "$SCRIPT" add "one" >/dev/null
+  "$SCRIPT" set-body 1 "first line" >/dev/null
+  run "$SCRIPT" append-body 1 "second line"
+  [ "$status" -eq 0 ]
+  [[ "$output" == "Appended to #1's description." ]]
+  run "$SCRIPT" list
+  [[ "${lines[0]}" == "- [ ] #1 one" ]]
+  [[ "${lines[1]}" == "first line" ]]
+  [[ "${lines[2]}" == "second line" ]]
+  git -C "$STORE" log -1 --format=%s | grep -qF "Append to #1's body"
+}
+
+@test "append-body works on a task with no existing body" {
+  "$SCRIPT" add "one" >/dev/null
+  run "$SCRIPT" append-body 1 "new note"
+  [ "$status" -eq 0 ]
+  run "$SCRIPT" list
+  [[ "${lines[1]}" == "new note" ]]
+}
+
+@test "append-body without text fails" {
+  "$SCRIPT" add "one" >/dev/null
+  run "$SCRIPT" append-body 1
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Text to append?"* ]]
 }
 
 # --- markdown body per task -------------------------------------------------
