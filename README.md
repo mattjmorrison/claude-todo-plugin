@@ -72,7 +72,7 @@ bats tests/todo.bats
 | `add <text>` | add a new task |
 | `list` | show all tasks with ids, status, and body |
 | `edit <id> <text>` | rename a task's title |
-| `set-body <id> [text]` | replace a task's markdown body (omit text to clear it) |
+| `set-body <id> [text]` | replace a task's markdown body (omit to clear) |
 | `append-body <id> <text>` | add more markdown to a task's existing body |
 | `done <id>` | mark a task complete |
 | `undone <id>` | mark a task incomplete again |
