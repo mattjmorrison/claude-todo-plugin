@@ -431,6 +431,15 @@ EOF
   git -C "$STORE" log -1 --format=%s | grep -qF "Edit #1 title"
 }
 
+@test "edit changes a task's title when it has no body" {
+  "$SCRIPT" add "one" >/dev/null
+  run "$SCRIPT" edit 1 "one but renamed"
+  [ "$status" -eq 0 ]
+  grep -qF -- "- [ ] #1 one but renamed" "$FILE"
+  run "$SCRIPT" list
+  [ "${#lines[@]}" -eq 1 ]
+}
+
 @test "edit without new text fails" {
   "$SCRIPT" add "one" >/dev/null
   run "$SCRIPT" edit 1
